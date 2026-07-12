@@ -1,12 +1,13 @@
 # nkit2iso
 
-Convert **GameCube** `*.nkit.iso` disc images back to plain, bit-exact `.iso`
-files that emulators (Dolphin, Nintendont, …) can boot.
+Convert **GameCube and Wii** `*.nkit.iso` disc images back to plain, bit-exact
+`.iso` files that emulators (Dolphin, Nintendont, …) can boot.
 
 `nkit2iso` is a single, dependency-free static binary written in Go. It restores
 the shrunk NKit v01 format by replaying the preserved data and regenerating the
-removed "junk" padding — then verifies the result against the original CRC32
-stored inside the NKit header, so a successful run is **redump-verified 1:1**.
+removed "junk" padding — and, for Wii, the AES encryption and the H0–H3 hash
+tree — then verifies the result against the original CRC32 stored inside the
+NKit header, so a successful run is **redump-verified 1:1**.
 
 ```
 $ nkit2iso -i "Mario Kart - Double Dash!! (USA).nkit.iso"
@@ -15,9 +16,12 @@ Restoring Mario Kart - Double Dash!! (USA).nkit.iso -> Mario Kart - Double Dash!
 CRC32 099E2C6D  MATCH (redump-verified)
 ```
 
-> **GameCube only, for now.** Wii NKit images are detected and rejected with a
-> clear message — see [Roadmap](#roadmap). GameCube is fully supported and
-> byte-exact.
+> **GameCube and Wii are both supported and byte-exact** (GameCube and Wii
+> single/multi-partition discs, including scrubbed dumps). The one case that
+> can't be restored from the `.nkit.iso` alone is a Wii image whose **update
+> partition was removed** — that data isn't in the file and needs an external
+> Redump recovery partition, so it's detected and reported. See
+> [Limitations](#limitations).
 
 ## Install
 
@@ -89,6 +93,20 @@ into place, regenerates junk and gaps to rebuild the original disc layout, and
 rewrites the FST/header offsets to their original values. The whole image is
 streamed with constant memory, then CRC32-checked against the header.
 
+For **Wii**, each partition's filesystem is rebuilt the same way in *decrypted*
+space, then `nkit2iso` regenerates the H0–H3 SHA-1 hash tree, re-encrypts every
+0x8000 cluster with the partition's AES title key, restores scrubbed regions, and
+reconstructs the partition table. Only stdlib crypto (`crypto/aes`, `crypto/sha1`)
+is used — still zero external dependencies.
+
+## Limitations
+
+- **Wii images with the update partition removed.** Some Wii `.nkit.iso` files
+  were shrunk by dropping the update (system-menu/IOS) partition, whose data is
+  not stored in the file and cannot be regenerated. Restoring these byte-exact
+  needs the matching external Redump recovery partition (`*_<CRC8>`). `nkit2iso`
+  detects this and reports it rather than emitting a wrong image.
+
 ## Build from source
 
 Requires Go 1.24+.
@@ -97,21 +115,15 @@ Requires Go 1.24+.
 git clone https://github.com/DonMikone/NKIT-Converter
 cd NKIT-Converter
 go build -o nkit2iso .
-go test ./...     # runs the junk-PRNG known-answer test
+go test ./...     # junk-PRNG, Wii common-key and hash-tree self-checks
 ```
-
-## Roadmap
-
-- **Wii support.** Wii restore additionally requires per-cluster AES encryption,
-  H0–H3 hash-tree regeneration, and partition-table reconstruction. It is not yet
-  implemented; Wii input is rejected rather than mis-converted.
 
 ## Credits & license
 
-The NKit format and its GameCube junk-generation algorithm were created by
-**Nanook** ([Nanook/NKitv1](https://github.com/Nanook/NKitv1)). `nkit2iso` is an
-independent, clean-room Go reimplementation of the *algorithm* (no source code
-was copied) built for cross-platform, dependency-free restoration.
+The NKit format and its GameCube/Wii algorithms were created by **Nanook**
+([Nanook/NKitv1](https://github.com/Nanook/NKitv1)). `nkit2iso` is an independent,
+clean-room Go reimplementation of the *algorithms* (no source code was copied)
+built for cross-platform, dependency-free restoration.
 
 Licensed under the [MIT License](LICENSE). This tool converts disc images you
 already own; it does not include or distribute any game data.

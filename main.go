@@ -62,13 +62,24 @@ func run(input, output string) error {
 		return err
 	}
 
+	// Detect GameCube vs Wii by disc magic without disturbing the read offset.
+	var magic [0x20]byte
+	if _, err := inf.ReadAt(magic[:], 0); err != nil {
+		return err
+	}
+	isWii := be32(magic[:], 0x18) == 0x5D1C9EA3
+
 	outf, err := os.Create(output)
 	if err != nil {
 		return err
 	}
 
 	fmt.Fprintf(os.Stderr, "Restoring %s -> %s\n", input, output)
-	nkitCrc, err := restore(inf, outf, st.Size(), progressBar())
+	restoreFn := restore
+	if isWii {
+		restoreFn = restoreWii
+	}
+	nkitCrc, err := restoreFn(inf, outf, st.Size(), progressBar())
 	fmt.Fprintln(os.Stderr) // finish the progress line
 	if err != nil {
 		outf.Close()

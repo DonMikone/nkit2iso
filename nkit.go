@@ -37,6 +37,16 @@ func be32(b []byte, o int) uint32       { return binary.BigEndian.Uint32(b[o:]) 
 func putBE32(b []byte, o int, v uint32) { binary.BigEndian.PutUint32(b[o:], v) }
 func alignUp4(n int64) int64            { return (n + 3) &^ 3 }
 
+// sortFst orders FST files by data offset then length (NKit's canonical order).
+func sortFst(files []fstEntry) {
+	sort.SliceStable(files, func(i, j int) bool {
+		if files[i].dataOffset != files[j].dataOffset {
+			return files[i].dataOffset < files[j].dataOffset
+		}
+		return files[i].length < files[j].length
+	})
+}
+
 type fstEntry struct {
 	dataOffset int64
 	length     int64
@@ -209,19 +219,14 @@ func buildConFiles(hdr, fst []byte, inLen int64) ([]conFile, error) {
 	fstOffset := int64(be32(hdr, 0x424))
 	fstSize := int64(len(fst))
 
-	files, err := parseFst(fst)
+	files, err := parseFst(fst, 1)
 	if err != nil {
 		return nil, err
 	}
 	if len(files) == 0 {
 		return nil, errors.New("empty FST")
 	}
-	sort.SliceStable(files, func(i, j int) bool {
-		if files[i].dataOffset != files[j].dataOffset {
-			return files[i].dataOffset < files[j].dataOffset
-		}
-		return files[i].length < files[j].length
-	})
+	sortFst(files)
 
 	con := make([]conFile, 0, len(files)+1)
 	synth := fstEntry{dataOffset: fstOffset, length: fstSize, offInFst: -1}
@@ -251,7 +256,7 @@ func buildConFiles(hdr, fst []byte, inLen int64) ([]conFile, error) {
 // parseFst extracts every file entry from a GameCube FST (12-byte records:
 // type/name at 0, offset at +4, length at +8; entry 0 is root, its length is
 // the total entry count). Directory entries are skipped.
-func parseFst(fst []byte) ([]fstEntry, error) {
+func parseFst(fst []byte, mlt int64) ([]fstEntry, error) {
 	if len(fst) < 12 {
 		return nil, errors.New("FST too small")
 	}
@@ -266,7 +271,7 @@ func parseFst(fst []byte) ([]fstEntry, error) {
 			continue // directory
 		}
 		files = append(files, fstEntry{
-			dataOffset: int64(be32(fst, base+4)),
+			dataOffset: int64(be32(fst, base+4)) * mlt, // Wii scales file offsets by 4
 			length:     int64(be32(fst, base+8)),
 			offInFst:   base + 4,
 		})
