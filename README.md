@@ -28,6 +28,17 @@ CRC32 099E2C6D  MATCH (redump-verified)
 
 ## Install
 
+### Homebrew (macOS / Linux)
+
+```sh
+brew install DonMikone/tap/nkit2iso
+```
+
+Installs the latest release; `brew` also clears the macOS quarantine flag for
+you, so no extra step is needed.
+
+### Manual download
+
 Download the archive for your platform from the
 [Releases](https://github.com/DonMikone/nkit2iso/releases) page and unpack
 the `nkit2iso` binary somewhere on your `PATH`.
