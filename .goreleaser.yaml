@@ -46,7 +46,7 @@ brews:
     repository:
       owner: DonMikone
       name: homebrew-tap
-      branch: main
+      branch: master
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://github.com/DonMikone/nkit2iso"
     description: "Restore GameCube/Wii .nkit.iso and .nkit.gcz disc images to bit-exact ISO"
