@@ -1,5 +1,9 @@
 # Zero-fill removed Wii update partitions instead of requiring recovery files
 
+> Amended by [0002](0002-offer-recovery-file-download.md): the tool now also
+> offers to download the recovery file for a bit-exact restore; zero-filling
+> remains the fallback and the `-recovery none` behaviour.
+
 Wii NKit images whose update partition was removed at shrink time (header word
 0x218 ≠ 0) do not contain that partition's bytes, so a bit-exact restore is
 impossible from the file alone. We restore them anyway: the original partition

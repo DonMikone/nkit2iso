@@ -22,10 +22,13 @@ CRC32 099E2C6D  MATCH (redump-verified)
 > `.nkit.iso` or a GCZ-compressed `.nkit.gcz`, which is transparently
 > decompressed. The one case that can't be restored byte-exact from the
 > `.nkit.iso` alone is a Wii image whose **update partition was removed** —
-> that data isn't in the file. These images are still converted to a full-size,
-> playable ISO (the missing region is zero-filled, exactly like official NKit
-> does without recovery files), with a clear warning that the result is not
-> redump-verifiable. See [Limitations](#limitations).
+> that data isn't in the file. For these images `nkit2iso` offers to download
+> the matching, publicly archived recovery file (the exact URL is shown) and
+> splice it back in for a bit-exact, redump-verified restore — or to convert
+> without it into a full-size, playable ISO (the missing region is
+> zero-filled, exactly like official NKit does without recovery files), with a
+> clear warning that the result is not redump-verifiable.
+> See [Removed update partitions](#removed-wii-update-partitions).
 
 ## Install
 
@@ -65,11 +68,14 @@ CLI tools distributed outside the App Store.
 ## Usage
 
 ```
-nkit2iso -i <in.nkit.iso> [-o <out.iso>] [-f]
+nkit2iso -i <in.nkit.iso> [-o <out.iso>] [-f] [-recovery ask|download|none]
 
   -i   input .nkit.iso file (may also be given as a positional argument)
   -o   output .iso file (default: input name with a .iso extension)
   -f   overwrite the output file if it already exists
+  -recovery   what to do when a Wii image's update partition was removed:
+              ask (default: prompt on a terminal), download (fetch the
+              recovery file without asking), none (always zero-fill)
   -version   print version and exit
 ```
 
@@ -92,8 +98,9 @@ nkit2iso game.nkit.gcz          # -> game.iso
 The exit code is `0` only when the reconstructed ISO's CRC32 matches the value
 stored in the NKit header. Any mismatch or error exits non-zero and the
 half-written output is removed. The one exception is a Wii image whose update
-partition was removed at shrink time: the CRC check is skipped (it cannot
-match), a warning is printed, and the playable ISO is kept with exit code `0`.
+partition was removed at shrink time *and* restored without its recovery file:
+the CRC check is skipped (it cannot match), a warning is printed, and the
+playable ISO is kept with exit code `0`.
 
 ## How it works
 
@@ -124,22 +131,29 @@ space, then `nkit2iso` regenerates the H0–H3 SHA-1 hash tree, re-encrypts ever
 reconstructs the partition table. Only stdlib crypto (`crypto/aes`, `crypto/sha1`)
 is used — still zero external dependencies.
 
-## Limitations
+## Removed Wii update partitions
 
-- **Wii images with the update partition removed are playable, not bit-exact.**
-  Some Wii `.nkit.iso` files were shrunk by dropping the update
-  (system-menu/IOS) partition, whose data is not stored in the file and cannot
-  be regenerated. `nkit2iso` restores these to a full-size ISO anyway: the
-  original partition table (which NKit backs up inside the image) is put back
-  and the update partition's region is zero-filled — the same thing official
-  NKit does when its recovery files are missing. The result boots in Dolphin
-  and USB loaders, but is not redump-verifiable and may not boot on an
-  unmodified console, so a warning is printed and the final CRC32 check is
-  skipped. Restoring these images *byte-exact* would additionally need the
-  matching external recovery partition file (`*_<CRC8>`, where the CRC is
-  shown in the warning); the update partition data is shared between many
-  games and such recovery files are archived publicly (e.g. the
-  "NKit Recovery Partitions" collection on archive.org).
+Some Wii `.nkit.iso` files were shrunk by dropping the update
+(system-menu/IOS) partition, whose data is not stored in the file and cannot
+be regenerated. When `nkit2iso` meets one of these it offers two ways to
+restore it (interactively on a terminal, or preselected via `-recovery`):
+
+1. **Download the recovery file** (`-recovery download`). The removed
+   partition's data is shared between many games and is archived publicly in
+   the "NKit Recovery Partitions" collection on archive.org. `nkit2iso` looks
+   the file up by the CRC32 stored in the NKit header, prints the exact index
+   and download URLs for full transparency, verifies the download against the
+   archive's SHA-1, and splices it back in. The result is **bit-exact** and
+   passes the normal redump CRC32 check. Nothing is fetched without the
+   prompt being answered or `-recovery download` being given explicitly, and
+   this is the only situation in which `nkit2iso` touches the network.
+2. **Restore without it** (`-recovery none`, or when the download fails or
+   stdin is not a terminal). The original partition table (which NKit backs
+   up inside the image) is put back and the update partition's region is
+   zero-filled — the same thing official NKit does when its recovery files
+   are missing. The result boots in Dolphin and USB loaders, but is not
+   redump-verifiable and may not boot on an unmodified console, so a warning
+   is printed and the final CRC32 check is skipped.
 
 ## Build from source
 

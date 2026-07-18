@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,6 +17,7 @@ func main() {
 	in := flag.String("i", "", "input .nkit.iso file (or pass as a positional argument)")
 	out := flag.String("o", "", "output .iso file (default: input name with .iso extension)")
 	force := flag.Bool("f", false, "overwrite the output file if it already exists")
+	recovery := flag.String("recovery", "ask", "removed Wii update partitions: ask, download, or none")
 	showVer := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -29,8 +31,13 @@ func main() {
 		input = flag.Arg(0)
 	}
 	if input == "" {
-		fmt.Fprintln(os.Stderr, "usage: nkit2iso -i <in.nkit.iso> [-o <out.iso>] [-f]")
+		fmt.Fprintln(os.Stderr, "usage: nkit2iso -i <in.nkit.iso> [-o <out.iso>] [-f] [-recovery ask|download|none]")
 		os.Exit(2)
+	}
+	switch *recovery {
+	case "ask", "download", "none":
+	default:
+		die("invalid -recovery %q (want ask, download, or none)", *recovery)
 	}
 
 	output := *out
@@ -46,13 +53,13 @@ func main() {
 		}
 	}
 
-	if err := run(input, output); err != nil {
+	if err := run(input, output, *recovery); err != nil {
 		os.Remove(output) // don't leave a half-written file on hard errors
 		die("%v", err)
 	}
 }
 
-func run(input, output string) error {
+func run(input, output, recoveryMode string) error {
 	inf, err := os.Open(input)
 	if err != nil {
 		return err
@@ -96,7 +103,8 @@ func run(input, output string) error {
 	var nkitCrc uint32
 	exact := true
 	if isWii {
-		nkitCrc, exact, err = restoreWii(src, outf, srcLen, progressBar())
+		resolve := newRecoveryResolver(recoveryMode, filepath.Dir(outf.Name()))
+		nkitCrc, exact, err = restoreWii(src, outf, srcLen, resolve, progressBar())
 	} else {
 		nkitCrc, err = restore(src, outf, srcLen, progressBar())
 	}

@@ -181,7 +181,7 @@ const (
 
 // ---- main restore --------------------------------------------------------
 
-func restoreWii(in io.Reader, outFile *os.File, inLen int64, progress func(cur, total int64)) (uint32, bool, error) {
+func restoreWii(in io.Reader, outFile *os.File, inLen int64, resolve recoveryResolver, progress func(cur, total int64)) (uint32, bool, error) {
 	br := bufio.NewReaderSize(in, 1<<20)
 	hdr := make([]byte, wiiHeaderSize)
 	if _, err := io.ReadFull(br, hdr); err != nil {
@@ -210,11 +210,15 @@ func restoreWii(in io.Reader, outFile *os.File, inLen int64, progress func(cur, 
 	// A non-zero updateCrc means the update partition was removed when this
 	// image was shrunk — its bytes are simply not in the file. NKit left a
 	// placeholder in its place whose first 0x100 bytes back up the original
-	// partition table. Mirror official NKit's missing-recovery behaviour:
-	// zero-fill the whole original update region and restore that exact
-	// table, which yields a playable but not bit-exact image.
+	// partition table. The resolver may supply the removed bytes (downloaded
+	// recovery file) for a bit-exact restore; otherwise mirror official
+	// NKit's missing-recovery behaviour: zero-fill the whole original update
+	// region and restore that exact table, which yields a playable but not
+	// bit-exact image.
 	var origTable []byte
 	var zeroFillEnd int64
+	var recovery io.ReadCloser
+	var recoverySize int64
 	if updateCrc != 0 {
 		fillLen := parts[0].rawOffset - wiiHeaderSize
 		if fillLen <= 0 || fillLen > 1<<20 {
@@ -237,10 +241,17 @@ func restoreWii(in io.Reader, outFile *os.File, inLen int64, progress func(cur, 
 		}
 		origTable = placeholder[:0x100]
 		zeroFillEnd = first.rawOffset
-		fmt.Fprintf(os.Stderr, "WARNING: this image was shrunk by removing its update partition (*_%08X);\n"+
-			"         that data is not in the file, so the region is zero-filled instead.\n"+
-			"         The ISO works in Dolphin and USB loaders, but is NOT bit-exact\n"+
-			"         (not redump-verifiable) and may not boot on an unmodified console.\n", updateCrc)
+		if resolve != nil {
+			recovery, recoverySize = resolve(updateCrc, zeroFillEnd-wiiHeaderSize)
+		}
+		if recovery != nil {
+			defer recovery.Close()
+		} else {
+			fmt.Fprintf(os.Stderr, "WARNING: this image was shrunk by removing its update partition (*_%08X);\n"+
+				"         that data is not in the file, so the region is zero-filled instead.\n"+
+				"         The ISO works in Dolphin and USB loaders, but is NOT bit-exact\n"+
+				"         (not redump-verifiable) and may not boot on an unmodified console.\n", updateCrc)
+		}
 	}
 
 	bw := bufio.NewWriterSize(outFile, 1<<20)
@@ -254,7 +265,16 @@ func restoreWii(in io.Reader, outFile *os.File, inLen int64, progress func(cur, 
 	st.lastType = 0xffffffff // "Other"
 
 	if origTable != nil {
-		if err := writeZeros(bw, zeroFillEnd-wiiHeaderSize); err != nil {
+		// Splice the recovery bytes (if any) at 0x50000; the rest of the
+		// region up to the first surviving partition is zeros on disc.
+		if recovery != nil {
+			if n, err := io.Copy(bw, recovery); err != nil {
+				return 0, false, fmt.Errorf("splicing recovery file: %w", err)
+			} else if n != recoverySize {
+				return 0, false, fmt.Errorf("splicing recovery file: got %d bytes, expected %d", n, recoverySize)
+			}
+		}
+		if err := writeZeros(bw, zeroFillEnd-wiiHeaderSize-recoverySize); err != nil {
 			return 0, false, err
 		}
 		st.srcPos = parts[0].rawOffset
@@ -303,7 +323,7 @@ func restoreWii(in io.Reader, outFile *os.File, inLen int64, progress func(cur, 
 	if _, err := outFile.WriteAt(hdr, 0); err != nil {
 		return 0, false, err
 	}
-	return nkitCrc, origTable == nil, nil
+	return nkitCrc, origTable == nil || recovery != nil, nil
 }
 
 // writeZeros streams n zero bytes to w.

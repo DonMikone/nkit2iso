@@ -33,7 +33,11 @@ Its first 0x100 bytes are a backup of the original partition table.
 
 **Recovery file**:
 An external file holding a removed update partition's raw bytes, identified by
-the partition's CRC32 (filename ends in `_<CRC8>`). Not shipped with nkit2iso.
+the partition's CRC32 (filename ends in `_<CRC8>`). Not shipped with nkit2iso,
+but publicly archived; the tool offers to download it (splicing it back makes
+the restore bit-exact). Note the CRC in the name is NKit's partition CRC, not
+the CRC32 of the file's own bytes — downloads are verified via the archive
+index's SHA-1 and the final whole-image CRC32.
 
 **Bit-exact restore**:
 A restore whose output CRC32 matches the original redump hash stored in the
@@ -42,7 +46,9 @@ all their data.
 _Avoid_: verified, perfect, 1:1
 
 **Playable restore**:
-A restore of an image with a removed update partition: full-size, boots in
-emulators and USB loaders, but the update region is zero-filled, so it is not
-bit-exact. Always accompanied by a warning.
+A restore of an image with a removed update partition *without* its recovery
+file: full-size, boots in emulators and USB loaders, but the update region is
+zero-filled, so it is not bit-exact. Always accompanied by a warning. The
+alternative — downloading the recovery file — upgrades the outcome to a
+bit-exact restore.
 _Avoid_: unverified ISO, scrubbed ISO
